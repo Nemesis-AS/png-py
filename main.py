@@ -9,8 +9,8 @@ def main():
 
     if is_valid:
         img.parse_chunks()
-
-        # print(img.data)
+        
+        print(img.pixels)
 
 
 if __name__ == "__main__":

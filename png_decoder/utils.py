@@ -5,7 +5,7 @@ def bytes_to_int(buffer: bytes) -> int:
     return struct.unpack(">I", buffer)[0]
 
 
-def paeth_filter(a, b, c):
+def paeth_filter(a: int, b: int, c: int) -> int:
     p = a + b - c
     pa = abs(p - a)
     pb = abs(p - b)
