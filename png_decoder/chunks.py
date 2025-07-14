@@ -16,7 +16,12 @@ class ImageChunk(ABC):
     def _initialize(self):
         pass
 
+# Ancillary Chunks
+class tRNS(ImageChunk):
+    def _initialize(self):
+        self.transparencies = [byte for byte in range(len(self.data))]
 
+# Critial Chunks
 class IHDR(ImageChunk):
     def _initialize(self):
         self.width = bytes_to_int(self.data[0:4])
@@ -26,7 +31,6 @@ class IHDR(ImageChunk):
         self.compression_method = self.data[10]
         self.filter_method = self.data[11]
         self.interlace_method = self.data[12]
-
 
 class PLTE(ImageChunk):
     def _initialize(self):
@@ -38,7 +42,14 @@ class PLTE(ImageChunk):
             blue = self.data[(idx * 3) + 2]
             self.colors.append((red, green, blue))
 
+    def add_transparency_from_tRNS(self, tRNS: tRNS) -> None:
+        for idx in range(len(tRNS.transparencies)):
+            color = self.colors[idx]
+            self.colors[idx] = (color[0], color[1], color[2], tRNS.transparencies[idx])
+
 
 class IDAT(ImageChunk):
     def _initialize(self):
         pass  # self.data is already set
+
+

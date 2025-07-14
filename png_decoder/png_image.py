@@ -1,7 +1,7 @@
 from zlib import decompress
 from math import ceil
 
-from .chunks import IHDR, PLTE, IDAT
+from .chunks import IHDR, PLTE, IDAT, tRNS
 from .utils import bytes_to_int, paeth_filter
 
 
@@ -12,6 +12,10 @@ class PNGImage:
         self.chunks = []
 
         self.ihdr: IHDR | None = None
+        self.plte: PLTE | None = None
+
+        # Ancillary Chunks
+        self.tRNS: tRNS | None = None
 
         self.PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10]
 
@@ -65,6 +69,7 @@ class PNGImage:
 
         for chunk_data in self.chunks:
             match chunk_data["type"]:
+                # Critical Chunks
                 case b"IHDR":
                     self.ihdr = IHDR(chunk_data)
                 case b"PLTE":
@@ -72,6 +77,10 @@ class PNGImage:
                 case b"IDAT":
                     self.data_chunks.append(IDAT(chunk_data))
                     self.data += chunk_data["data"]
+                
+                # Ancillary Chunks
+                case b"tRNS":
+                    self.tRNS = tRNS(chunk_data)
 
         self.parse_data()
 
@@ -83,6 +92,10 @@ class PNGImage:
         if self.ihdr.color_type == 3 and not self.plte:
             print("[ERROR] Missing palette Chunk!")
             return
+        
+        # Add Transparencies to Palette if tRNS chunk is present
+        if self.tRNS and self.plte:
+            self.plte.add_transparency_from_tRNS(self.tRNS)
 
         # Step1: Decompress the data
         deflated: bytes = b''
@@ -113,12 +126,12 @@ class PNGImage:
             print("[ERROR] Invalid Color Type")
             return
 
-        print("Bits per pixel: ", self.bits_per_pixel)
-        print("Deflated length: ", len(deflated))
+        # print("Bits per pixel: ", self.bits_per_pixel)
+        # print("Deflated length: ", len(deflated))
 
 
         bytes_per_pixel = ceil(self.bits_per_pixel / 8)
-        print("Bytes per pixel: ", bytes_per_pixel)
+        # print("Bytes per pixel: ", bytes_per_pixel)
 
         
         offset_b = -(self.ihdr.width + 1) * bytes_per_pixel # Offset for the top/up pixel
@@ -156,26 +169,34 @@ class PNGImage:
                 case _:
                     print("[ERROR] Unknown filter type!")
     
-        # Since the length of the decoded bytes is same as the deflated data, we need to remove the bytes that contained the 
-        # filter type
+        # Since the length of the decoded bytes is same as the deflated data, 
+        # we need to remove the bytes that contained the filter type
         for idx in range((self.ihdr.height - 1) * scanline_width, -1, -scanline_width):
-            print(decoded_bytes.pop(idx))
+            decoded_bytes.pop(idx)
 
         # Step3: Reconstruct decoded bytes into pixels
         pixels = [(0, 0, 0, 0) for _ in range(self.ihdr.width * self.ihdr.height)]
+        MAX_ALPHA = 255
 
         match self.ihdr.color_type:
             case 0: # Greyscale (R=G=B)
                 for idx in range(len(decoded_bytes)):
                     byte = decoded_bytes[idx]
-                    pixels[idx] = (byte, byte, byte, 1)
+                    pixels[idx] = (byte, byte, byte, MAX_ALPHA)
             case 2: # TrueColor (RGB)
                 for idx in range(0, len(decoded_bytes), bytes_per_pixel):
-                    pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], 1)
+                    pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], MAX_ALPHA)
             case 3: # Indexed Color
+                # This is already handled above, but needs to be added due to type checking
+                if not self.plte:
+                    print("[ERROR] Missing palette Chunk!")
+                    return
+
                 for idx in range(0, len(decoded_bytes), bytes_per_pixel):
                     color = self.plte.colors[decoded_bytes[idx]]
-                    pixels[idx] = (color[0], color[1], color[2], 1)
+                    alpha = color[3] if len(color) == 4 else MAX_ALPHA
+
+                    pixels[idx] = (color[0], color[1], color[2], alpha)
             case 4: # Greyscale with alpha
                 for idx in range(0, len(decoded_bytes), bytes_per_pixel):
                     pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx + 1])
