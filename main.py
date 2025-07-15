@@ -9,7 +9,6 @@ def main():
 
     if is_valid:
         img.parse_chunks()
-        
         # print(img.pixels)
 
 

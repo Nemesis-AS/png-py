@@ -15,7 +15,7 @@ from PIL import Image
 def main():
     filepath = "images/barrierRed.png"
 
-    img = PNGImage(filepath)
+    img = PNGImage(filepath, debug=True)
     is_valid = img.validate_sign()
 
     if is_valid:

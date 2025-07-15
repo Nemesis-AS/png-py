@@ -6,7 +6,7 @@ from .utils import bytes_to_int, paeth_filter
 
 
 class PNGImage:
-    def __init__(self, filepath):
+    def __init__(self, filepath, debug = False):
         self.filepath = filepath
         self.signature = None
         self.chunks = []
@@ -23,6 +23,9 @@ class PNGImage:
         self.data: bytes = b""
 
         self.color_data = []
+
+        # For debugging purposes
+        self.debug = debug
 
     def validate_sign(self) -> bool:
         with open(self.filepath, "rb") as fh:
@@ -59,21 +62,32 @@ class PNGImage:
                     # print("End of Image reached!")
                     break
 
-            # for chunk in self.chunks:
-            #     print("Chunk Type: ", chunk["type"])
-            #     print("Chunk Size: ", chunk["size"])
+            if self.debug:
+                for chunk in self.chunks:
+                    print("Chunk Type: ", chunk["type"])
+                    print("Chunk Size: ", chunk["size"])
 
-            #     if chunk["type"] != b'IDAT':
-            #         print("Chunk Data: ", chunk["data"])
-            #     print("")
+                    if chunk["type"] != b'IDAT':
+                        print("Chunk Data: ", chunk["data"])
+                    print("")
 
         for chunk_data in self.chunks:
             match chunk_data["type"]:
                 # Critical Chunks
                 case b"IHDR":
                     self.ihdr = IHDR(chunk_data)
+                    if self.debug:
+                        print("[Width]:", self.ihdr.width)
+                        print("[Height]:", self.ihdr.height)
+                        print("[Bit Depth]:", self.ihdr.bit_depth)
+                        print("[Color Type]:", self.ihdr.color_type)
+                        print("[Compression Method]:", self.ihdr.compression_method)
+                        print("[Filter Method]:", self.ihdr.filter_method)
+                        print("[Interlace Method]:", self.ihdr.interlace_method)
                 case b"PLTE":
                     self.plte = PLTE(chunk_data)
+                    if self.debug:
+                        print("[PLTE]:", len(self.plte.colors), "colors")
                 case b"IDAT":
                     self.data_chunks.append(IDAT(chunk_data))
                     self.data += chunk_data["data"]
@@ -81,6 +95,8 @@ class PNGImage:
                 # Ancillary Chunks
                 case b"tRNS":
                     self.tRNS = tRNS(chunk_data)
+                    if self.debug:
+                        print("[tRNS]:", len(self.tRNS.transparencies), "colors")
 
         self.parse_data()
 
@@ -125,26 +141,21 @@ class PNGImage:
         if self.bits_per_pixel == 0:
             print("[ERROR] Invalid Color Type")
             return
-
-        # print("Bits per pixel: ", self.bits_per_pixel)
-        # print("Deflated length: ", len(deflated))
-
-
-        bytes_per_pixel = ceil(self.bits_per_pixel / 8)
-        # print("Bytes per pixel: ", bytes_per_pixel)
-
         
-        offset_b = -(self.ihdr.width + 1) * bytes_per_pixel # Offset for the top/up pixel
-        offset_c = offset_b - 1 # Offset for the top left pixel
+        bytes_per_pixel = ceil(self.bits_per_pixel / 8)
 
-        scanline_width = self.ihdr.width + 1
+        if self.debug:
+            print("Bits per pixel: ", self.bits_per_pixel)
+            print("Deflated length: ", len(deflated))
+            print("Bytes per pixel: ", bytes_per_pixel)
 
+        scanline_bytes = (self.ihdr.width * bytes_per_pixel) + 1
         decoded_bytes = [0 for _ in range(len(deflated))]
 
         current_filter = -1
         for idx in range(len(deflated)):
             # The scanline filter type byte would have an index of type nx, where x is the scanline_width and n is any natural number
-            if idx % scanline_width == 0:
+            if idx % scanline_bytes == 0:
                 current_filter = deflated[idx]
                 continue
             
@@ -152,26 +163,26 @@ class PNGImage:
                 case 0: # None Filter
                     decoded_bytes[idx] = deflated[idx]
                 case 1: # Sub Filter
-                    recon_a = decoded_bytes[idx - 1] if idx % scanline_width > 1 else 0
+                    recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
                     decoded_bytes[idx] = deflated[idx] + recon_a
                 case 2: # Up Filter
-                    recon_b = decoded_bytes[idx - offset_b] if idx // scanline_width > 0 else 0
+                    recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
                     decoded_bytes[idx] = deflated[idx] + recon_b
                 case 3: # Average Filter
-                    recon_a = decoded_bytes[idx - 1] if idx % scanline_width > 1 else 0
-                    recon_b = decoded_bytes[idx - offset_b] if idx // scanline_width > 0 else 0
+                    recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
+                    recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
                     decoded_bytes[idx] = deflated[idx] + ((recon_a + recon_b) // 2)
                 case 4: # Paeth Filter
-                    recon_a = decoded_bytes[idx - 1] if idx % scanline_width > 1 else 0
-                    recon_b = decoded_bytes[idx - offset_b] if idx // scanline_width > 0 else 0
-                    recon_c = decoded_bytes[idx - offset_c] if idx % scanline_width > 1 and idx // scanline_width > 0 else 0
+                    recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
+                    recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
+                    recon_c = decoded_bytes[idx - scanline_bytes - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel and idx // scanline_bytes > 0 else 0
                     decoded_bytes[idx] = paeth_filter(recon_a, recon_b, recon_c)
                 case _:
                     print("[ERROR] Unknown filter type!")
     
         # Since the length of the decoded bytes is same as the deflated data, 
         # we need to remove the bytes that contained the filter type
-        for idx in range((self.ihdr.height - 1) * scanline_width, -1, -scanline_width):
+        for idx in range((self.ihdr.height - 1) * scanline_bytes, -1, -scanline_bytes):
             decoded_bytes.pop(idx)
 
         # Step3: Reconstruct decoded bytes into pixels
@@ -180,29 +191,36 @@ class PNGImage:
 
         match self.ihdr.color_type:
             case 0: # Greyscale (R=G=B)
-                for idx in range(len(decoded_bytes)):
+                for idx in range(len(pixels)):
                     byte = decoded_bytes[idx]
                     pixels[idx] = (byte, byte, byte, MAX_ALPHA)
             case 2: # TrueColor (RGB)
-                for idx in range(0, len(decoded_bytes), bytes_per_pixel):
-                    pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], MAX_ALPHA)
+                for pixel_idx in range(0, len(pixels)):
+                    idx = pixel_idx * bytes_per_pixel
+                    pixels[pixel_idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], MAX_ALPHA)
             case 3: # Indexed Color
                 # This is already handled above, but needs to be added due to type checking
                 if not self.plte:
                     print("[ERROR] Missing palette Chunk!")
                     return
 
-                for idx in range(0, len(decoded_bytes), bytes_per_pixel):
+                for pixel_idx in range(0, len(pixels)):
+                    idx = pixel_idx * bytes_per_pixel
+
                     color = self.plte.colors[decoded_bytes[idx]]
                     alpha = color[3] if len(color) == 4 else MAX_ALPHA
 
-                    pixels[idx] = (color[0], color[1], color[2], alpha)
+                    pixels[pixel_idx] = (color[0], color[1], color[2], alpha)
             case 4: # Greyscale with alpha
-                for idx in range(0, len(decoded_bytes), bytes_per_pixel):
-                    pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx + 1])
+                for pixel_idx in range(0, len(pixels)):
+                    idx = pixel_idx * bytes_per_pixel
+
+                    pixels[pixel_idx] = (decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx], decoded_bytes[idx + 1])
             case 6: # TrueColor with alpha
-                for idx in range(0, len(decoded_bytes), bytes_per_pixel):
-                    pixels[idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], decoded_bytes[idx + 3])
+                for pixel_idx in range(0, len(pixels)):
+                    idx = pixel_idx * bytes_per_pixel
+
+                    pixels[pixel_idx] = (decoded_bytes[idx], decoded_bytes[idx + 1], decoded_bytes[idx + 2], decoded_bytes[idx + 3])
             case _:
                 self.bits_per_pixel = 0
         
