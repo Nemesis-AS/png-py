@@ -161,22 +161,22 @@ class PNGImage:
             
             match current_filter:
                 case 0: # None Filter
-                    decoded_bytes[idx] = deflated[idx]
+                    decoded_bytes[idx] = deflated[idx] % 256
                 case 1: # Sub Filter
                     recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
-                    decoded_bytes[idx] = deflated[idx] + recon_a
+                    decoded_bytes[idx] = (deflated[idx] + recon_a) % 256
                 case 2: # Up Filter
                     recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
-                    decoded_bytes[idx] = deflated[idx] + recon_b
+                    decoded_bytes[idx] = (deflated[idx] + recon_b) % 256
                 case 3: # Average Filter
                     recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
                     recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
-                    decoded_bytes[idx] = deflated[idx] + ((recon_a + recon_b) // 2)
+                    decoded_bytes[idx] = (deflated[idx] + ((recon_a + recon_b) // 2)) % 256
                 case 4: # Paeth Filter
                     recon_a = decoded_bytes[idx - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel else 0
                     recon_b = decoded_bytes[idx - scanline_bytes] if idx // scanline_bytes > 0 else 0
                     recon_c = decoded_bytes[idx - scanline_bytes - bytes_per_pixel] if idx % scanline_bytes > bytes_per_pixel and idx // scanline_bytes > 0 else 0
-                    decoded_bytes[idx] = paeth_filter(recon_a, recon_b, recon_c)
+                    decoded_bytes[idx] = paeth_filter(recon_a, recon_b, recon_c) % 256
                 case _:
                     print("[ERROR] Unknown filter type!")
     
