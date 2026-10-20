@@ -1,5 +1,5 @@
 from math import ceil
-from zlib import decompress
+from zlib import crc32, decompress
 from zlib import error as zliberror
 
 from .chunks import IDAT, IHDR, PLTE, tRNS
@@ -50,6 +50,9 @@ class PNGImage:
                 chunk_type = fh.read(4)
                 chunk_data = fh.read(chunk_size)
                 chunk_crc = fh.read(4)
+
+                if crc32(chunk_type + chunk_data) != bytes_to_int(chunk_crc):
+                    raise PNGDecodeError(f"CRC mismatch in {chunk_type.decode('latin-1')} chunk")
 
                 self.chunks.append(
                     {
