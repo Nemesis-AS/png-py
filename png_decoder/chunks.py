@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from .utils import bytes_to_int
+from .utils import bytes_to_int, bytes_to_short
 
 
 class ImageChunk(ABC):
@@ -16,10 +16,16 @@ class ImageChunk(ABC):
     def _initialize(self):
         pass
 
+
 # Ancillary Chunks
 class tRNS(ImageChunk):
     def _initialize(self):
-        self.transparencies = [byte for byte in range(len(self.data))]
+        self.transparencies = [byte for byte in self.data]
+        self.color_key = tuple(
+            bytes_to_short(self.data[idx : idx + 2])
+            for idx in range(0, len(self.data) - 1, 2)
+        )
+
 
 # Critial Chunks
 class IHDR(ImageChunk):
@@ -31,6 +37,7 @@ class IHDR(ImageChunk):
         self.compression_method = self.data[10]
         self.filter_method = self.data[11]
         self.interlace_method = self.data[12]
+
 
 class PLTE(ImageChunk):
     def _initialize(self):
@@ -51,5 +58,3 @@ class PLTE(ImageChunk):
 class IDAT(ImageChunk):
     def _initialize(self):
         pass  # self.data is already set
-
-

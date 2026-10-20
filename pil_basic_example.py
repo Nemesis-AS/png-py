@@ -7,9 +7,9 @@
 # LINUX/MACOS
 # python3 -m pip install pillow
 
-from png_decoder import PNGImage
-
 from PIL import Image
+
+from png_decoder import PNGImage
 
 
 def main():

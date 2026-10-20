@@ -16,3 +16,4 @@ env/
 # Unimportant data
 images/*.png
 !images/barrierRed.png
+images/pngsuite
