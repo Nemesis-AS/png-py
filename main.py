@@ -2,7 +2,7 @@ from png_decoder import PNGImage
 
 
 def main():
-    filepath = "images/barrierRed.png"
+    filepath = "images/pngsuite/xdtn0g01.png"
 
     img = PNGImage(filepath)
     is_valid = img.validate_sign()

@@ -1,0 +1,2 @@
+class PNGDecodeError(Exception):
+    pass

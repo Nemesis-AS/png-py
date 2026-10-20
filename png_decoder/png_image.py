@@ -1,7 +1,9 @@
 from math import ceil
 from zlib import decompress
+from zlib import error as zliberror
 
 from .chunks import IDAT, IHDR, PLTE, tRNS
+from .png_error import PNGDecodeError
 from .utils import bytes_to_int, paeth_filter, scale_sample
 
 
@@ -69,7 +71,6 @@ class PNGImage:
 
                     if chunk["type"] != b"IDAT":
                         print("Chunk Data: ", chunk["data"])
-                    print("")
 
         for chunk_data in self.chunks:
             match chunk_data["type"]:
@@ -102,12 +103,26 @@ class PNGImage:
 
     def parse_data(self):
         if not self.ihdr:
-            print("[ERROR] IHDR not present!")
-            return
+            raise PNGDecodeError("IHDR not present")
+
+        VALID_BIT_DEPTHS = {
+            0: [1, 2, 4, 8, 16],
+            2: [8, 16],
+            3: [1, 2, 4, 8],
+            4: [8, 16],
+            6: [8, 16],
+        }
+
+        if self.ihdr.color_type not in VALID_BIT_DEPTHS:
+            raise PNGDecodeError(f"Invalid Color Type: {self.ihdr.color_type}")
+
+        if self.ihdr.bit_depth not in VALID_BIT_DEPTHS[self.ihdr.color_type]:
+            raise PNGDecodeError(
+                f"Invalid Bit Depth {self.ihdr.bit_depth} for Color Type {self.ihdr.color_type}"
+            )
 
         if self.ihdr.color_type == 3 and not self.plte:
-            print("[ERROR] Missing palette Chunk!")
-            return
+            raise PNGDecodeError("Missing palette Chunk")
 
         # Add Transparencies to Palette if tRNS chunk is present
         if self.tRNS and self.plte and self.ihdr.color_type == 3:
@@ -117,10 +132,12 @@ class PNGImage:
         deflated: bytes = b""
         match self.ihdr.compression_method:
             case 0:
-                deflated = decompress(self.data)
+                try:
+                    deflated = decompress(self.data)
+                except zliberror as e:
+                    raise PNGDecodeError("An error occurred while decompressing the IHDR chunk") from e
             case _:
-                print("[ERROR] Unknown Compression Type defined")
-                return
+                raise PNGDecodeError("[ERROR] Unknown Compression Type defined")
 
         # Step2: Undo the Filtering
         self.bits_per_pixel: int = 0
@@ -135,12 +152,6 @@ class PNGImage:
                 self.bits_per_pixel = self.ihdr.bit_depth * 2
             case 6:  # TrueColor with alpha
                 self.bits_per_pixel = self.ihdr.bit_depth * 4
-            case _:
-                self.bits_per_pixel = 0
-
-        if self.bits_per_pixel == 0:
-            print("[ERROR] Invalid Color Type")
-            return
 
         bytes_per_pixel = ceil(self.bits_per_pixel / 8)
 
@@ -211,7 +222,7 @@ class PNGImage:
                         deflated[idx] + paeth_filter(recon_a, recon_b, recon_c)
                     ) % 256
                 case _:
-                    print("[ERROR] Unknown filter type:", current_filter)
+                    raise PNGDecodeError(f"Unknown filter type: {current_filter}")
 
         # Since the length of the decoded bytes is same as the deflated data,
         # we need to remove the bytes that contained the filter type
@@ -236,7 +247,7 @@ class PNGImage:
 
                     pixels[pixel_idx] = (value, value, value, alpha)
             case 2:  # TrueColor (RGB)
-                for pixel_idx in range(0, len(pixels)):
+                for pixel_idx in range(len(pixels)):
                     idx = pixel_idx * samples_per_pixel
                     rgb = (samples[idx], samples[idx + 1], samples[idx + 2])
                     alpha = 0 if color_key == rgb else MAX_ALPHA
@@ -250,16 +261,15 @@ class PNGImage:
             case 3:  # Indexed Color
                 # This is already handled above, but needs to be added due to type checking
                 if not self.plte:
-                    print("[ERROR] Missing palette Chunk!")
-                    return
+                    raise PNGDecodeError("Missing palette Chunk")
 
-                for pixel_idx in range(0, len(pixels)):
+                for pixel_idx in range(len(pixels)):
                     color = self.plte.colors[samples[pixel_idx]]
                     alpha = color[3] if len(color) == 4 else MAX_ALPHA
 
                     pixels[pixel_idx] = (color[0], color[1], color[2], alpha)
             case 4:  # Greyscale with alpha
-                for pixel_idx in range(0, len(pixels)):
+                for pixel_idx in range(len(pixels)):
                     idx = pixel_idx * samples_per_pixel
                     grey = scale_sample(samples[idx], bit_depth)
 
@@ -270,7 +280,7 @@ class PNGImage:
                         scale_sample(samples[idx + 1], bit_depth),
                     )
             case 6:  # TrueColor with alpha
-                for pixel_idx in range(0, len(pixels)):
+                for pixel_idx in range(len(pixels)):
                     idx = pixel_idx * samples_per_pixel
 
                     pixels[pixel_idx] = (
@@ -279,8 +289,6 @@ class PNGImage:
                         scale_sample(samples[idx + 2], bit_depth),
                         scale_sample(samples[idx + 3], bit_depth),
                     )
-            case _:
-                self.bits_per_pixel = 0
 
         self.pixels = pixels
 

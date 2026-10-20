@@ -13,9 +13,9 @@ from png_decoder import PNGImage
 
 
 def main():
-    filepath = "images/barrierRed.png"
+    filepath = "images/pngsuite/xd9n2c08.png"
 
-    img = PNGImage(filepath, debug=True)
+    img = PNGImage(filepath)
     is_valid = img.validate_sign()
 
     if is_valid:
